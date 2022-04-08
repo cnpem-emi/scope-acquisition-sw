@@ -1,1 +1,2 @@
-
+pyepics==3.5.1
+siriuspy==2.46.0 
