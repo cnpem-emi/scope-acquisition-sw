@@ -6,38 +6,42 @@ from zipfile import ZipFile
 import ssl
 import epics
 import tempfile
+from getpass import getpass
 
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 
+PV_TIMEOUT = 0.8
+
 
 class PS:
     def __init__(self, name: str, sample_freq: float):
-        if epics.get_pv(name + ":SOFBMode-Sts", timeout=1) != "False":
-            raise RuntimeError("{} SOFB mode status is true".format(name))
 
-        if epics.get_pv(name + ":OpMode-Sts", timeout=1) != "SlowRef":
+        if epics.caget(name + ":OpMode-Sts", timeout=PV_TIMEOUT) != 3:
             raise RuntimeError("{} operation mode is not SlowRef".format(name))
-
-        self.name = name
-        self.sample_freq = sample_freq
-
-        self.initial_sample_freq = epics.caget(name + ":ScopeFreq-RB")
-        self.initial_scope = epics.caget(name + ":ScopeSrcAddr-RB")
-        self.initial_trigger = epics.caget(name + ":Src-Sel")
-
-        self.wfm = []
-        self.max_ref = epics.get_pv(name + ":ParamCtrlMaxRef-Cte", timeout=1)
 
         addr = 0xD008
         self.model = sirius.PSSearch.conv_psname_2_psmodel(name)
 
         if self.model == "FBP":
+            if epics.caget(name + ":SOFBMode-Sts", timeout=PV_TIMEOUT) != "False":
+                raise RuntimeError("{} SOFB mode status is true".format(name))
+
             addr = self.get_fbp_addr()
             self.sample_freq /= 4
         elif self.model in ["FAC_DCDC", "FAP"]:
             addr = 0xD006
+
+        self.name = name
+        self.sample_freq = sample_freq
+
+        self.initial_sample_freq = epics.caget(name + ":ScopeFreq-RB", timeout=PV_TIMEOUT)
+        self.initial_scope = epics.caget(name + ":ScopeSrcAddr-RB", timeout=PV_TIMEOUT)
+        self.initial_trigger = epics.caget(name + ":Src-Sel", timeout=PV_TIMEOUT)
+
+        self.wfm = []
+        self.max_ref = epics.caget(name + ":ParamCtrlMaxRef-Cte", timeout=PV_TIMEOUT)
 
         epics.caput(name + ":ScopeFreq-SP", self.sample_freq)
         epics.caput(name + ":ScopeSrcAddr-SP", addr)
@@ -45,18 +49,21 @@ class PS:
 
     def get_fbp_addr(self):
         for index, ps in enumerate(
-            sirius.PSSearch.conv_udc_2_bsmps(sirius.PSSearch.conv_psname_2_udc(self.name))
+            sirius.PSSearch.sirius.PSSearch.conv_udc_2_bsmps(
+                sirius.PSSearch.conv_psname_2_udc(self.name)
+            )
         ):
             if self.name == ps[0]:
                 return index * 2
 
     def acquire_and_set_wfm(self):
-        self.wfm = epics.get_pv(self.name + ":Wfm-Mon", timeout=1)
+        self.wfm = epics.caget(self.name + ":Wfm-Mon", timeout=PV_TIMEOUT * 10)
 
     def __del__(self):
         epics.caput(self.name + ":ScopeFreq-SP", self.initial_sample_freq)
         epics.caput(self.name + ":ScopeSrcAddr-SP", self.initial_scope)
         epics.caput(self.name + ":Src-Sel", self.initial_trigger)
+        pass
 
 
 def save_data(sample_freq: float, path: str = "", recipient: str = ""):
@@ -74,7 +81,12 @@ def save_data(sample_freq: float, path: str = "", recipient: str = ""):
         ps_dict[loc] = []
         os.mkdir(os.path.join(root, loc))
         for ps in sirius.PSSearch.get_psnames({"sec": loc}):
-            ps_dict[loc].append(PS(ps, sample_freq))
+            try:
+                ps_obj = PS(ps, sample_freq)
+            except RuntimeError:
+                continue
+
+            ps_dict[loc].append(ps_obj)
 
     epics.caput("AS-RaMO:TI-EVG:StudyExtTrig-Cmd", 1)
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
@@ -100,9 +112,9 @@ def save_data(sample_freq: float, path: str = "", recipient: str = ""):
 
         with tempfile.SpooledTemporaryFile() as tp:
             with ZipFile(tp, "w") as zip:
-                for root, _, files in os.walk(root):
-                    for file in files:
-                        zip.write(os.path.join(root, file))
+                for dir in ["Scope/TS", "Scope/TB", "Scope/BO", "Scope/SI"]:
+                    for file in os.listdir(dir):
+                        zip.write(os.path.join(dir, file))
 
             tp.seek(0)
 
@@ -118,7 +130,7 @@ def save_data(sample_freq: float, path: str = "", recipient: str = ""):
             message.attach(part)
             text = message.as_string()
             context = ssl.create_default_context()
-            password = input("Enter your email password")
+            password = getpass("Enter your email password: ")
             with smtplib.SMTP("smtp.office365.com", 587) as server:
                 server.starttls(context=context)
                 server.login(recipient, password)
