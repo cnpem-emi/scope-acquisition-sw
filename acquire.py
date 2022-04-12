@@ -49,6 +49,8 @@ class PS:
         epics.caput(name + ":ScopeSrcAddr-SP", addr)
         epics.caput(name + ":Src-Sel", "Study")
 
+        self.sample_freq = epics.caget(name + ":ScopeFreq-RB", timeout=PV_TIMEOUT)
+
     def get_fbp_addr(self):
         for index, ps in enumerate(
             sirius.PSSearch.conv_udc_2_bsmps(sirius.PSSearch.conv_psname_2_udc(self.name))
