@@ -1,8 +1,10 @@
+from threading import Thread
+from queue import Queue
 import os
 from datetime import datetime
 import smtplib
 import siriuspy.search as sirius
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_DEFLATED
 import ssl
 import epics
 import tempfile
@@ -12,11 +14,14 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 
-PV_TIMEOUT = 0.8
+PV_TIMEOUT = 0.5
+SAMPLE_FREQ = 4000
 
 
 class PS:
-    def __init__(self, name: str, sample_freq: float):
+    def __init__(self, name: str):
+        self.name = name
+        self.sample_freq = SAMPLE_FREQ
 
         if epics.caget(name + ":OpMode-Sts", timeout=PV_TIMEOUT) != 3:
             raise RuntimeError("{} operation mode is not SlowRef".format(name))
@@ -25,16 +30,13 @@ class PS:
         self.model = sirius.PSSearch.conv_psname_2_psmodel(name)
 
         if self.model == "FBP":
-            if epics.caget(name + ":SOFBMode-Sts", timeout=PV_TIMEOUT) != "False":
+            if epics.caget(name + ":SOFBMode-Sts", timeout=PV_TIMEOUT) != 0:
                 raise RuntimeError("{} SOFB mode status is true".format(name))
 
             addr = self.get_fbp_addr()
             self.sample_freq /= 4
         elif self.model in ["FAC_DCDC", "FAP"]:
             addr = 0xD006
-
-        self.name = name
-        self.sample_freq = sample_freq
 
         self.initial_sample_freq = epics.caget(name + ":ScopeFreq-RB", timeout=PV_TIMEOUT)
         self.initial_scope = epics.caget(name + ":ScopeSrcAddr-RB", timeout=PV_TIMEOUT)
@@ -49,9 +51,7 @@ class PS:
 
     def get_fbp_addr(self):
         for index, ps in enumerate(
-            sirius.PSSearch.sirius.PSSearch.conv_udc_2_bsmps(
-                sirius.PSSearch.conv_psname_2_udc(self.name)
-            )
+            sirius.PSSearch.conv_udc_2_bsmps(sirius.PSSearch.conv_psname_2_udc(self.name))
         ):
             if self.name == ps[0]:
                 return index * 2
@@ -63,12 +63,20 @@ class PS:
         epics.caput(self.name + ":ScopeFreq-SP", self.initial_sample_freq)
         epics.caput(self.name + ":ScopeSrcAddr-SP", self.initial_scope)
         epics.caput(self.name + ":Src-Sel", self.initial_trigger)
-        pass
 
 
-def save_data(sample_freq: float, path: str = "", recipient: str = ""):
-    ps_dict = {}
+def get_pss(index: int, ps_names: list, q: Queue):
+    pss = []
+    for ps in ps_names:
+        try:
+            pss.append(PS(ps))
+        except RuntimeError:
+            continue
 
+    q.put({str(index): pss})
+
+
+def save_data(path: str = "", recipient: str = ""):
     if not path:
         path = os.getcwd()
 
@@ -77,19 +85,46 @@ def save_data(sample_freq: float, path: str = "", recipient: str = ""):
 
     os.mkdir(root)
 
-    for loc in ["TS", "TB", "BO", "SI"]:
-        ps_dict[loc] = []
-        os.mkdir(os.path.join(root, loc))
-        for ps in sirius.PSSearch.get_psnames({"sec": loc}):
-            try:
-                ps_obj = PS(ps, sample_freq)
-            except RuntimeError:
-                continue
+    print("Getting PV information and setting them up...")
 
-            ps_dict[loc].append(ps_obj)
+    q = Queue()
+    locs = ["TS", "TB", "BO", "SI"]
+    threads = []
+    ps_dict = {}
+
+    for loc in locs:
+        os.mkdir(os.path.join(root, loc))
+        sub_args = sirius.PSSearch.get_psnames({"sec": loc, "dev": "(?!FC).*"})
+
+        pivot_divider = 2 if loc != "SI" else 6
+
+        pivot = len(sub_args) // pivot_divider
+        for i in range(0, pivot_divider):
+            t = Thread(
+                target=get_pss,
+                args=(
+                    i,
+                    sub_args[pivot * i : pivot * (i + 1) if i < pivot_divider else len(sub_args)],
+                    q,
+                ),
+            )
+            print(pivot * i, pivot * (i + 1))
+            t.start()
+
+            threads.append(t)
+
+        for t in threads:
+            t.join()
+
+        ps_dict[loc] = list(q.get().values())[0]
+        for i in range(1, pivot_divider):
+            ps_dict[loc] += list(q.get().values())[0]
+        print(ps_dict[loc])
 
     epics.caput("AS-RaMO:TI-EVG:StudyExtTrig-Cmd", 1)
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+
+    print("Getting PS waveforms at {}...".format(wfm_time))
 
     for loc, pss in ps_dict.items():
         for ps in pss:
@@ -104,14 +139,13 @@ def save_data(sample_freq: float, path: str = "", recipient: str = ""):
                 csv_file.writelines("Wfm-Mon\n" + "\n".join([str(wfm) for wfm in ps.wfm]))
 
     if recipient:
-        # email message
         message = MIMEMultipart()
         message["From"] = ""
         message["To"] = recipient
         message["Subject"] = "Scope Values"
 
         with tempfile.SpooledTemporaryFile() as tp:
-            with ZipFile(tp, "w") as zip:
+            with ZipFile(tp, "w", ZIP_DEFLATED) as zip:
                 for dir in ["Scope/TS", "Scope/TB", "Scope/BO", "Scope/SI"]:
                     for file in os.listdir(dir):
                         zip.write(os.path.join(dir, file))
