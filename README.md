@@ -5,6 +5,6 @@ Basic functions to automate gathering power supply buffer data
 ## Usage
 
 ```python
-save_data(sample_frequency, path="/save/path", recipient="your.email@cnpem.br")
+save_data(path="/save/path", recipient="your.email@cnpem.br")
 
 ```
