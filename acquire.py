@@ -1,21 +1,34 @@
-from threading import Thread
-from queue import Queue
 import os
-from datetime import datetime
 import smtplib
-import siriuspy.search as sirius
-from zipfile import ZipFile, ZIP_DEFLATED
 import ssl
-import epics
 import tempfile
-from getpass import getpass
-
+from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
+from getpass import getpass
+from queue import Queue
+from threading import Thread
+from zipfile import ZIP_DEFLATED, ZipFile
+
+import epics
+import siriuspy.search as sirius
 
 PV_TIMEOUT = 0.5
 SAMPLE_FREQ = 4000
+
+TRIGGER_NAMES = [
+    "TB-Glob:TI-Mags",
+    "TS-Glob:TI-Mags",
+    "BO-Glob:TI-Mags-Fams",
+    "BO-Glob:TI-Mags-Corrs",
+    "SI-Glob:TI-Mags-Bends",
+    "SI-Glob:TI-Mags-Quads",
+    "SI-Glob:TI-Mags-Sexts",
+    "SI-Glob:TI-Mags-Skews",
+    "SI-Glob:TI-Mags-Corrs",
+    "SI-Glob:TI-Mags-QTrims",
+]
 
 
 class PS:
@@ -23,14 +36,17 @@ class PS:
         self.name = name
         self.sample_freq = SAMPLE_FREQ
 
-        if epics.caget(name + ":OpMode-Sts", timeout=PV_TIMEOUT) != 3:
+        op_mode_pv = epics.PV(name + ":OpMode-Sts")
+
+        if op_mode_pv.value != 3:
             raise RuntimeError("{} operation mode is not SlowRef".format(name))
 
         addr = 0xD008
         self.model = sirius.PSSearch.conv_psname_2_psmodel(name)
 
         if self.model == "FBP":
-            if epics.caget(name + ":SOFBMode-Sts", timeout=PV_TIMEOUT) != 0:
+            sofb_mode_pv = epics.PV(name + ":SOFBMode-Sts")
+            if sofb_mode_pv.value != 0:
                 raise RuntimeError("{} SOFB mode status is true".format(name))
 
             addr = self.get_fbp_addr()
@@ -38,18 +54,22 @@ class PS:
         elif self.model in ["FAC_DCDC", "FAP"]:
             addr = 0xD006
 
-        self.initial_sample_freq = epics.caget(name + ":ScopeFreq-RB", timeout=PV_TIMEOUT)
-        self.initial_scope = epics.caget(name + ":ScopeSrcAddr-RB", timeout=PV_TIMEOUT)
-        self.initial_trigger = epics.caget(name + ":Src-Sel", timeout=PV_TIMEOUT)
+        scope_freq_pv = epics.PV(name + ":ScopeFreq-RB")
+        scope_freq_sp_pv = epics.PV(name + ":ScopeFreq-SP")
+        scope_addr_pv = epics.PV(name + ":ScopeSrcAddr-RB")
+        scope_addr_sp_pv = epics.PV(name + ":ScopeSrcAddr-RB")
+
+        self.initial_sample_freq = scope_freq_pv.value
+        self.initial_scope = scope_addr_pv.value
 
         self.wfm = []
-        self.max_ref = epics.caget(name + ":ParamCtrlMaxRef-Cte", timeout=PV_TIMEOUT)
+        wfm_max_ref_pv = epics.PV(name + ":ParamCtrlMaxRef-Cte")
+        self.max_ref = wfm_max_ref_pv.value
 
-        epics.caput(name + ":ScopeFreq-SP", self.sample_freq)
-        epics.caput(name + ":ScopeSrcAddr-SP", addr)
-        epics.caput(name + ":Src-Sel", "Study")
+        scope_freq_sp_pv.value = self.sample_freq
+        scope_addr_sp_pv.value = addr
 
-        self.sample_freq = epics.caget(name + ":ScopeFreq-RB", timeout=PV_TIMEOUT)
+        self.sample_freq = scope_freq_pv.value
 
     def get_fbp_addr(self):
         for index, ps in enumerate(
@@ -59,12 +79,15 @@ class PS:
                 return index * 2
 
     def acquire_and_set_wfm(self):
-        self.wfm = epics.caget(self.name + ":Wfm-Mon", timeout=PV_TIMEOUT * 10)
+        wfm_pv = epics.PV(self.name + ":Wfm-Mon")
+        self.wfm = wfm_pv.value
 
-    def __del__(self):
-        epics.caput(self.name + ":ScopeFreq-SP", self.initial_sample_freq)
-        epics.caput(self.name + ":ScopeSrcAddr-SP", self.initial_scope)
-        epics.caput(self.name + ":Src-Sel", self.initial_trigger)
+    def recover_initial_config(self):
+        scope_freq_pv = epics.PV(self.name + ":ScopeFreq-SP")
+        scope_addr_pv = epics.PV(self.name + ":ScopeSrcAddr-SP")
+
+        scope_freq_pv.value = self.initial_sample_freq
+        scope_addr_pv.value = self.initial_scope
 
 
 def get_pss(index: int, ps_names: list, q: Queue):
@@ -94,9 +117,15 @@ def save_data(path: str = "", recipient: str = ""):
     threads = []
     ps_dict = {}
 
+    trigger_pvs = [epics.PV(trigger + ":Src-Sel") for trigger in TRIGGER_NAMES]
+    old_trig_srcs = {}
+    for pv in trigger_pvs:
+        old_trig_srcs[pv.pvname] = pv.value
+        pv.value = "Study"
+
     for loc in locs:
         os.mkdir(os.path.join(root, loc))
-        sub_args = sirius.PSSearch.get_psnames({"sec": loc, "dev": "(?!FC).*"})
+        sub_args = sirius.PSSearch.get_psnames({"sec": loc, "dis": "PS", "dev": "(?!FC).*"})
 
         pivot_divider = 2 if loc != "SI" else 6
 
@@ -123,7 +152,9 @@ def save_data(path: str = "", recipient: str = ""):
             ps_dict[loc] += list(q.get().values())[0]
         print(ps_dict[loc])
 
-    epics.caput("AS-RaMO:TI-EVG:StudyExtTrig-Cmd", 1)
+    trig_pv = epics.PV("AS-RaMO:TI-EVG:StudyExtTrig-Cmd")
+    trig_pv.put(1)
+
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
     print("Getting PS waveforms at {}...".format(wfm_time))
@@ -131,6 +162,7 @@ def save_data(path: str = "", recipient: str = ""):
     for loc, pss in ps_dict.items():
         for ps in pss:
             ps.acquire_and_set_wfm()
+            ps.recover_initial_config()
             with open(os.path.join(root, loc, ps.name + ".csv"), "w") as csv_file:
                 csv_file.write("Date,{}\n".format(wfm_time))
                 csv_file.write("Name,{}\n".format(ps.name))
@@ -139,6 +171,9 @@ def save_data(path: str = "", recipient: str = ""):
                 csv_file.write("Model,{}\n".format(ps.model))
 
                 csv_file.writelines("Wfm-Mon\n" + "\n".join([str(wfm) for wfm in ps.wfm]))
+
+    for pv in trigger_pvs:
+        pv.value = old_trig_srcs[pv.pvname]
 
     if recipient:
         message = MIMEMultipart()
