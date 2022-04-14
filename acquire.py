@@ -139,7 +139,6 @@ def save_data(path: str = "", recipient: str = ""):
                     q,
                 ),
             )
-            print(pivot * i, pivot * (i + 1))
             t.start()
 
             threads.append(t)
@@ -150,10 +149,9 @@ def save_data(path: str = "", recipient: str = ""):
         ps_dict[loc] = list(q.get().values())[0]
         for i in range(1, pivot_divider):
             ps_dict[loc] += list(q.get().values())[0]
-        print(ps_dict[loc])
 
     trig_pv = epics.PV("AS-RaMO:TI-EVG:StudyExtTrig-Cmd")
-    trig_pv.put(1)
+    trig_pv.value = 1
 
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
