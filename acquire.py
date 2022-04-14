@@ -117,11 +117,14 @@ def save_data(path: str = "", recipient: str = ""):
     threads = []
     ps_dict = {}
 
-    trigger_pvs = [epics.PV(trigger + ":Src-Sel") for trigger in TRIGGER_NAMES]
+    trigger_pvs = [
+        (epics.PV(trigger + ":Src-Sel"), epics.PV(trigger + ":Src-Sts"))
+        for trigger in TRIGGER_NAMES
+    ]
     old_trig_srcs = {}
     for pv in trigger_pvs:
-        old_trig_srcs[pv.pvname] = pv.value
-        pv.value = "Study"
+        old_trig_srcs[pv[0].pvname] = pv[1].value
+        pv[0].value = "Study"
 
     for loc in locs:
         os.mkdir(os.path.join(root, loc))
@@ -171,7 +174,7 @@ def save_data(path: str = "", recipient: str = ""):
                 csv_file.writelines("Wfm-Mon\n" + "\n".join([str(wfm) for wfm in ps.wfm]))
 
     for pv in trigger_pvs:
-        pv.value = old_trig_srcs[pv.pvname]
+        pv[0].value = old_trig_srcs[pv[0].pvname]
 
     if recipient:
         message = MIMEMultipart()
