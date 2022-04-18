@@ -37,6 +37,7 @@ class PS:
         self.sample_freq = SAMPLE_FREQ
 
         op_mode_pv = epics.PV(name + ":OpMode-Sts")
+        op_mode_pv.wait_for_connection(PV_TIMEOUT)
 
         if op_mode_pv.value != 3:
             raise RuntimeError("{} operation mode is not SlowRef".format(name))
@@ -58,12 +59,19 @@ class PS:
         scope_freq_sp_pv = epics.PV(name + ":ScopeFreq-SP")
         scope_addr_pv = epics.PV(name + ":ScopeSrcAddr-RB")
         scope_addr_sp_pv = epics.PV(name + ":ScopeSrcAddr-RB")
+        wfm_max_ref_pv = epics.PV(name + ":ParamCtrlMaxRef-Cte")
+
+        scope_freq_pv.wait_for_connection(PV_TIMEOUT)
+        scope_freq_sp_pv.wait_for_connection(PV_TIMEOUT)
+        scope_addr_pv.wait_for_connection(PV_TIMEOUT)
+        scope_addr_sp_pv.wait_for_connection(PV_TIMEOUT)
+        wfm_max_ref_pv.wait_for_connection(PV_TIMEOUT)
 
         self.initial_sample_freq = scope_freq_pv.value
         self.initial_scope = scope_addr_pv.value
 
         self.wfm = []
-        wfm_max_ref_pv = epics.PV(name + ":ParamCtrlMaxRef-Cte")
+
         self.max_ref = wfm_max_ref_pv.value
 
         scope_freq_sp_pv.value = self.sample_freq
@@ -80,11 +88,15 @@ class PS:
 
     def acquire_and_set_wfm(self):
         wfm_pv = epics.PV(self.name + ":Wfm-Mon")
+        wfm_pv.wait_for_connection(PV_TIMEOUT)
+
         self.wfm = wfm_pv.value
 
     def recover_initial_config(self):
         scope_freq_pv = epics.PV(self.name + ":ScopeFreq-SP")
         scope_addr_pv = epics.PV(self.name + ":ScopeSrcAddr-SP")
+        scope_freq_pv.wait_for_connection(PV_TIMEOUT)
+        scope_addr_pv.wait_for_connection(PV_TIMEOUT)
 
         scope_freq_pv.value = self.initial_sample_freq
         scope_addr_pv.value = self.initial_scope
@@ -127,6 +139,7 @@ def save_data(path: str = "", recipient: str = ""):
         pv[0].value = "Study"
 
     for loc in locs:
+        print("{}...".format(loc), end="", flush=True)
         os.mkdir(os.path.join(root, loc))
         sub_args = sirius.PSSearch.get_psnames({"sec": loc, "dis": "PS", "dev": "(?!FC).*"})
 
@@ -152,8 +165,10 @@ def save_data(path: str = "", recipient: str = ""):
         ps_dict[loc] = list(q.get().values())[0]
         for i in range(1, pivot_divider):
             ps_dict[loc] += list(q.get().values())[0]
+        print("done!")
 
     trig_pv = epics.PV("AS-RaMO:TI-EVG:StudyExtTrig-Cmd")
+    trig_pv.wait_for_connection(PV_TIMEOUT)
     trig_pv.value = 1
 
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
@@ -161,6 +176,7 @@ def save_data(path: str = "", recipient: str = ""):
     print("Getting PS waveforms at {}...".format(wfm_time))
 
     for loc, pss in ps_dict.items():
+        print("{}...".format(loc), end="", flush=True)
         for ps in pss:
             ps.acquire_and_set_wfm()
             ps.recover_initial_config()
@@ -172,6 +188,7 @@ def save_data(path: str = "", recipient: str = ""):
                 csv_file.write("Model,{}\n".format(ps.model))
 
                 csv_file.writelines("Wfm-Mon\n" + "\n".join([str(wfm) for wfm in ps.wfm]))
+        print("done!")
 
     for pv in trigger_pvs:
         pv[0].value = old_trig_srcs[pv[0].pvname]
@@ -207,3 +224,4 @@ def save_data(path: str = "", recipient: str = ""):
                 server.starttls(context=context)
                 server.login(recipient, password)
                 server.sendmail(recipient, recipient, text)
+            print("File sent to {}!".format(recipient))
