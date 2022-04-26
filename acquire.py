@@ -84,7 +84,7 @@ class PS:
             sirius.PSSearch.conv_udc_2_bsmps(sirius.PSSearch.conv_psname_2_udc(self.name))
         ):
             if self.name == ps[0]:
-                return index * 2
+                return 0xD000 + index * 2
 
     def acquire_and_set_wfm(self):
         wfm_pv = epics.PV(self.name + ":Wfm-Mon")
