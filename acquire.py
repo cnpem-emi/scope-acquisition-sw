@@ -58,7 +58,7 @@ class PS:
         scope_freq_pv = epics.PV(name + ":ScopeFreq-RB")
         scope_freq_sp_pv = epics.PV(name + ":ScopeFreq-SP")
         scope_addr_pv = epics.PV(name + ":ScopeSrcAddr-RB")
-        scope_addr_sp_pv = epics.PV(name + ":ScopeSrcAddr-RB")
+        scope_addr_sp_pv = epics.PV(name + ":ScopeSrcAddr-SP")
         wfm_max_ref_pv = epics.PV(name + ":ParamCtrlMaxRef-Cte")
 
         scope_freq_pv.wait_for_connection(PV_TIMEOUT)
