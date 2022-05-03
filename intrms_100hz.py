@@ -12,7 +12,7 @@ import csv
 #       TRIM - TRIM coils
 
 data_dir = "Scope - 28-04-2022 115645/Scope/SI/"
-date = re.findall("\d{2}-\d{2}-\d{4} \d{6}", data_dir)[0]  # noqa: W605
+date = "{}-{}-{}{} {}:{}:{}".format(*re.findall("\d\d", data_dir))  # noqa: W605
 
 groupdict = {
     "QB": ["Dipolos e Quadrupolos", "SI-Fam:PS-[QB].*"],
