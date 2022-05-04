@@ -15,7 +15,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import epics
 import siriuspy.search as sirius
 
-PV_TIMEOUT = 0.5
+PV_TIMEOUT = 2
 SAMPLE_FREQ = 4000
 
 TRIGGER_NAMES = [
@@ -188,7 +188,7 @@ def save_data(path: str = ""):
     trig_pv.wait_for_connection(PV_TIMEOUT)
     trig_pv.value = 1
     print("Waiting for data acquisition...")
-    time.sleep(25)
+    time.sleep(5)
 
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
