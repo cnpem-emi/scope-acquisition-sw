@@ -22,7 +22,7 @@ groupdict = {
 }
 
 while True:
-    group = input("Digite o grupo de fontes (QB, S, COR ou TRIM): ")
+    group = input("Digite o grupo de fontes (QB, S, CO ou TRIM): ")
     if group in ["CO", "TRIM"]:
         sector = input("Digite o setor: ")
     else:
