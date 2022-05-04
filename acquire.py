@@ -2,6 +2,7 @@ import os
 import smtplib
 import ssl
 import tempfile
+import time
 from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
@@ -39,7 +40,7 @@ class PS:
         op_mode_pv = epics.PV(name + ":OpMode-Sts")
         op_mode_pv.wait_for_connection(PV_TIMEOUT)
 
-        if op_mode_pv.value != 3:
+        if op_mode_pv.value is None or op_mode_pv.value > 4:
             raise RuntimeError("{} operation mode is not SlowRef".format(name))
 
         addr = 0xD008
@@ -59,6 +60,8 @@ class PS:
         scope_freq_sp_pv = epics.PV(name + ":ScopeFreq-SP")
         scope_addr_pv = epics.PV(name + ":ScopeSrcAddr-RB")
         scope_addr_sp_pv = epics.PV(name + ":ScopeSrcAddr-SP")
+        auto_trig_sel_rb = epics.PV(name + ":WfmUpdateAuto-Sts")
+        auto_trig_sel_sp = epics.PV(name + ":WfmUpdateAuto-Sel")
         wfm_max_ref_pv = epics.PV(name + ":ParamCtrlMaxRef-Cte")
 
         scope_freq_pv.wait_for_connection(PV_TIMEOUT)
@@ -66,7 +69,10 @@ class PS:
         scope_addr_pv.wait_for_connection(PV_TIMEOUT)
         scope_addr_sp_pv.wait_for_connection(PV_TIMEOUT)
         wfm_max_ref_pv.wait_for_connection(PV_TIMEOUT)
+        auto_trig_sel_rb.wait_for_connection(PV_TIMEOUT)
+        auto_trig_sel_sp.wait_for_connection(PV_TIMEOUT)
 
+        self.auto_trig = auto_trig_sel_rb.value
         self.initial_sample_freq = scope_freq_pv.value
         self.initial_scope = scope_addr_pv.value
 
@@ -76,6 +82,7 @@ class PS:
 
         scope_freq_sp_pv.value = self.sample_freq
         scope_addr_sp_pv.value = addr
+        auto_trig_sel_sp.value = 1
 
         self.sample_freq = scope_freq_pv.value
 
@@ -95,9 +102,13 @@ class PS:
     def recover_initial_config(self):
         scope_freq_pv = epics.PV(self.name + ":ScopeFreq-SP")
         scope_addr_pv = epics.PV(self.name + ":ScopeSrcAddr-SP")
+        auto_trig_sel_sp = epics.PV(self.name + ":WfmUpdateAuto-Sel")
+
+        auto_trig_sel_sp.wait_for_connection(PV_TIMEOUT)
         scope_freq_pv.wait_for_connection(PV_TIMEOUT)
         scope_addr_pv.wait_for_connection(PV_TIMEOUT)
 
+        auto_trig_sel_sp.value = self.auto_trig
         scope_freq_pv.value = self.initial_sample_freq
         scope_addr_pv.value = self.initial_scope
 
@@ -113,11 +124,13 @@ def get_pss(index: int, ps_names: list, q: Queue):
     q.put({str(index): pss})
 
 
-def save_data(path: str = "", recipient: str = ""):
+def save_data(path: str = ""):
     if not path:
         path = os.getcwd()
 
-    root_name = "Scope"
+    recipient = input("Enter your email address: ")
+
+    root_name = "Scope {}".format(datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
     root = os.path.join(path, root_name)
 
     os.mkdir(root)
@@ -130,13 +143,17 @@ def save_data(path: str = "", recipient: str = ""):
     ps_dict = {}
 
     trigger_pvs = [
-        (epics.PV(trigger + ":Src-Sel"), epics.PV(trigger + ":Src-Sts"))
+        [epics.PV(trigger + ":Src-Sel"), epics.PV(trigger + ":Src-Sts"), epics.PV(trigger + ":State-Sel"), epics.PV(trigger + ":State-Sts")]
         for trigger in TRIGGER_NAMES
     ]
     old_trig_srcs = {}
     for pv in trigger_pvs:
+        for val in pv:
+            val.wait_for_connection(PV_TIMEOUT)
         old_trig_srcs[pv[0].pvname] = pv[1].value
+        old_trig_srcs[pv[2].pvname] = pv[3].value
         pv[0].value = "Study"
+        pv[2].value = 1
 
     for loc in locs:
         print("{}...".format(loc), end="", flush=True)
@@ -170,6 +187,8 @@ def save_data(path: str = "", recipient: str = ""):
     trig_pv = epics.PV("AS-RaMO:TI-EVG:StudyExtTrig-Cmd")
     trig_pv.wait_for_connection(PV_TIMEOUT)
     trig_pv.value = 1
+    print("Waiting for data acquisition...")
+    time.sleep(25)
 
     wfm_time = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
@@ -192,6 +211,7 @@ def save_data(path: str = "", recipient: str = ""):
 
     for pv in trigger_pvs:
         pv[0].value = old_trig_srcs[pv[0].pvname]
+        pv[2].value = old_trig_srcs[pv[2].pvname]
 
     if recipient:
         message = MIMEMultipart()
@@ -201,7 +221,7 @@ def save_data(path: str = "", recipient: str = ""):
 
         with tempfile.SpooledTemporaryFile() as tp:
             with ZipFile(tp, "w", ZIP_DEFLATED) as zip:
-                for dir in ["Scope/TS", "Scope/TB", "Scope/BO", "Scope/SI"]:
+                for dir in ["{}/TS".format(root_name), "{}/TB".format(root_name), "{}/BO".format(root_name), "{}/SI".format(root_name)]:
                     for file in os.listdir(dir):
                         zip.write(os.path.join(dir, file))
 
@@ -225,3 +245,5 @@ def save_data(path: str = "", recipient: str = ""):
                 server.login(recipient, password)
                 server.sendmail(recipient, recipient, text)
             print("File sent to {}!".format(recipient))
+
+save_data()

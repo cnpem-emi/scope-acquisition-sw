@@ -11,7 +11,7 @@ import csv
 #       CO - COrretoras
 #       TRIM - TRIM coils
 
-data_dir = "Scope - 28-04-2022 115645/Scope/SI/"
+data_dir = "/home/controle/Downloads/Scope - 04-05-2022 104512/Scope/SI/"
 date = "{}-{}-{}{} {}:{}:{}".format(*re.findall("\d\d", data_dir))  # noqa: W605
 
 groupdict = {
@@ -31,6 +31,7 @@ while True:
     name_pattern = groupdict[group][1].format(sector)
 
     flist = [f for f in os.listdir(data_dir) if re.match(name_pattern, f)]
+    print(flist)
     names = []
     y = []
 
