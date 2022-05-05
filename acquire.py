@@ -256,5 +256,6 @@ def save_data(path: str = ""):
                 server.sendmail(recipient, recipient, text)
             print("File sent to {}!".format(recipient))
 
+
 if __name__ == "__main__":
     save_data()
