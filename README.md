@@ -4,7 +4,14 @@ Basic functions to automate gathering power supply buffer data
 
 ## Usage
 
-```python
-save_data(path="/save/path", recipient="your.email@cnpem.br")
+As a module:
 
+```python
+save_data(path="/save/path")
+```
+
+As a standalone file:
+
+```bash
+python3 acquire.py
 ```
