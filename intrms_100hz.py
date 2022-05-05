@@ -6,6 +6,7 @@ import re
 import csv
 
 import tkinter as tk
+from tkinter import filedialog
 
 # GRUPOS:
 #       QB - Quadrupolos e dipolos
@@ -16,7 +17,7 @@ import tkinter as tk
 root = tk.Tk()
 root.withdraw()
 
-data_dir = tk.filedialog.askdirectory() + "/SI/"
+data_dir = filedialog.askdirectory() + "/SI/"
 
 date = "{}-{}-{}{} {}:{}:{}".format(*re.findall("\d\d", data_dir))  # noqa: W605
 
