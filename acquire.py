@@ -95,7 +95,7 @@ class PS:
         scope_freq_pv = epics.PV(self.name + ":ScopeFreq-RB")
         scope_freq_pv.wait_for_connection(PV_TIMEOUT)
         self.sample_freq = scope_freq_pv.value
-        
+
         wfm_pv = epics.PV(self.name + ":Wfm-Mon")
         wfm_pv.wait_for_connection(PV_TIMEOUT)
 
