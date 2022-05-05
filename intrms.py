@@ -58,6 +58,6 @@ def intrms(data, fs=1, flow=0, fhigh=np.inf, window=None, noverlap=None):
         df = f_sel[1] - f_sel[0]
 
         # integrate PSD and square root the result to get the integrated Xrms
-        Xrms[:, src] = np.sqrt(df * integrate.cumulative_trapezoid(Pxx_sel))
+        Xrms[:, src] = np.sqrt(df * integrate.cumtrapz(Pxx_sel))
 
     return Xrms, f_sel

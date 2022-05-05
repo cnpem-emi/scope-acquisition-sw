@@ -5,13 +5,19 @@ import os
 import re
 import csv
 
+import tkinter as tk
+
 # GRUPOS:
 #       QB - Quadrupolos e dipolos
 #       S - Sextupolos
 #       CO - COrretoras
 #       TRIM - TRIM coils
 
-data_dir = "/home/controle/Downloads/Scope - 04-05-2022 104512/Scope/SI/"
+root = tk.Tk()
+root.withdraw()
+
+data_dir = tk.filedialog.askdirectory() + "/SI/"
+
 date = "{}-{}-{}{} {}:{}:{}".format(*re.findall("\d\d", data_dir))  # noqa: W605
 
 groupdict = {
@@ -31,7 +37,6 @@ while True:
     name_pattern = groupdict[group][1].format(sector)
 
     flist = [f for f in os.listdir(data_dir) if re.match(name_pattern, f)]
-    print(flist)
     names = []
     y = []
 
@@ -51,17 +56,23 @@ while True:
         y_index = np.where(f_sel <= 100)[0][-1] - 1
         y.append(dataRMS[y_index, 0] / param * 1e6)
 
-    # ploting
     x = np.arange(len(names))
     fig, ax = plt.subplots()
     bars = ax.bar(x, y, zorder=3)
     ax.set_ylabel("Ruído integrado [ppm]")
     ax.set_xlabel("Fonte")
-    ax.set_xticks(x, names, rotation=45, ha="right", rotation_mode="anchor", size=8)
-    ax.bar_label(bars, padding=3, rotation=90, size=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(names)
+    ax.set_ylim(top=max(y) * 1.2)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
     ax.grid(axis="y", zorder=0)
+
+    for i, val in enumerate(y):
+        plt.text(i - 0.25, val * 1.1, "{:.4f}".format(val), rotation="vertical")
 
     plt.title(
         "Ruído integrado até 100Hz de fontes de {} ({})".format(groupdict[group][0], date),

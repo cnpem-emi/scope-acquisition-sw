@@ -143,7 +143,12 @@ def save_data(path: str = ""):
     ps_dict = {}
 
     trigger_pvs = [
-        [epics.PV(trigger + ":Src-Sel"), epics.PV(trigger + ":Src-Sts"), epics.PV(trigger + ":State-Sel"), epics.PV(trigger + ":State-Sts")]
+        [
+            epics.PV(trigger + ":Src-Sel"),
+            epics.PV(trigger + ":Src-Sts"),
+            epics.PV(trigger + ":State-Sel"),
+            epics.PV(trigger + ":State-Sts"),
+        ]
         for trigger in TRIGGER_NAMES
     ]
     old_trig_srcs = {}
@@ -221,7 +226,12 @@ def save_data(path: str = ""):
 
         with tempfile.SpooledTemporaryFile() as tp:
             with ZipFile(tp, "w", ZIP_DEFLATED) as zip:
-                for dir in ["{}/TS".format(root_name), "{}/TB".format(root_name), "{}/BO".format(root_name), "{}/SI".format(root_name)]:
+                for dir in [
+                    "{}/TS".format(root_name),
+                    "{}/TB".format(root_name),
+                    "{}/BO".format(root_name),
+                    "{}/SI".format(root_name),
+                ]:
                     for file in os.listdir(dir):
                         zip.write(os.path.join(dir, file))
 
@@ -245,5 +255,6 @@ def save_data(path: str = ""):
                 server.login(recipient, password)
                 server.sendmail(recipient, recipient, text)
             print("File sent to {}!".format(recipient))
+
 
 save_data()
