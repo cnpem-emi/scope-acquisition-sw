@@ -84,8 +84,6 @@ class PS:
         scope_addr_sp_pv.value = addr
         auto_trig_sel_sp.value = 1
 
-        self.sample_freq = scope_freq_pv.value
-
     def get_fbp_addr(self):
         for index, ps in enumerate(
             sirius.PSSearch.conv_udc_2_bsmps(sirius.PSSearch.conv_psname_2_udc(self.name))
@@ -94,6 +92,7 @@ class PS:
                 return 0xD000 + index * 2
 
     def acquire_and_set_wfm(self):
+        self.sample_freq = scope_freq_pv.value
         wfm_pv = epics.PV(self.name + ":Wfm-Mon")
         wfm_pv.wait_for_connection(PV_TIMEOUT)
 
