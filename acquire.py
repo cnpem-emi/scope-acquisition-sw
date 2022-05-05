@@ -92,7 +92,7 @@ class PS:
                 return 0xD000 + index * 2
 
     def acquire_and_set_wfm(self):
-        scope_freq_pv = epics.PV(name + ":ScopeFreq-RB")
+        scope_freq_pv = epics.PV(self.name + ":ScopeFreq-RB")
         scope_freq_pv.wait_for_connection(PV_TIMEOUT)
         self.sample_freq = scope_freq_pv.value
         
