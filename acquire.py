@@ -16,7 +16,7 @@ import epics
 import siriuspy.search as sirius
 
 PV_TIMEOUT = 2
-SAMPLE_FREQ = 4000
+ps_dict = {}
 
 TRIGGER_NAMES = [
     "TB-Glob:TI-Mags",
@@ -33,9 +33,9 @@ TRIGGER_NAMES = [
 
 
 class PS:
-    def __init__(self, name: str):
+    def __init__(self, name: str, sample_freq: float):
         self.name = name
-        self.sample_freq = SAMPLE_FREQ
+        self.sample_freq = sample_freq
 
         op_mode_pv = epics.PV(name + ":OpMode-Sts")
         op_mode_pv.wait_for_connection(PV_TIMEOUT)
@@ -115,11 +115,11 @@ class PS:
         scope_addr_pv.value = self.initial_scope
 
 
-def get_pss(index: int, ps_names: list, q: Queue):
+def get_pss(index: int, ps_names: list, q: Queue, sample_freq: float):
     pss = []
     for ps in ps_names:
         try:
-            pss.append(PS(ps))
+            pss.append(PS(ps, sample_freq))
         except RuntimeError:
             continue
 
@@ -131,6 +131,12 @@ def save_data(path: str = ""):
         path = os.getcwd()
 
     recipient = input("Enter your email address: ")
+    sample_freq = None
+    while sample_freq is None:
+        try:
+            sample_freq = float(input("Enter sample frequency: "))
+        except ValueError:
+            print("Invalid sample frequency value!")
 
     root_name = "Scope {}".format(datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
     root = os.path.join(path, root_name)
@@ -142,7 +148,7 @@ def save_data(path: str = ""):
     q = Queue()
     locs = ["TS", "TB", "BO", "SI"]
     threads = []
-    ps_dict = {}
+    global ps_dict
 
     trigger_pvs = [
         [
@@ -177,6 +183,7 @@ def save_data(path: str = ""):
                     i,
                     sub_args[pivot * i : pivot * (i + 1) if i < pivot_divider else len(sub_args)],
                     q,
+                    sample_freq,
                 ),
             )
             t.start()
@@ -260,4 +267,16 @@ def save_data(path: str = ""):
 
 
 if __name__ == "__main__":
-    save_data()
+    try:
+        save_data()
+    except KeyboardInterrupt:
+        print("Handling program interruption...")
+        print(
+            "To forcefully exit, strike CTRL+C again \033[31m(may lead to undefined behavior!)\033[0m"
+        )
+        for _, pss in ps_dict.items():
+            for ps in pss:
+                ps.recover_initial_config()
+        print(
+            "Cleanup finished! Please \033[31mavoid interrupting the program\033[0m mid execution."
+        )
