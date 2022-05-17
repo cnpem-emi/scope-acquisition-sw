@@ -7,8 +7,7 @@
 #       fs:         sampling frequency (Hz) (default = 1)
 #       flow:       low frequency limit for integration (default = 0)
 #       fhigh:      high frequency limit for integration (default = Inf)
-#       window:     windowing function for internal DFT calculation (default = rectangular window
-#                   with 10# of number of points of x)
+#       window:     windowing function for internal DFT calculation (default = rectangular window)
 #       noverlap:   number of samples which overlap between two consecutive windows on PSD calculation
 #   Returns:
 #       Xrms:       integrated RMS-value in frequency domain
