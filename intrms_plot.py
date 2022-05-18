@@ -16,7 +16,7 @@ if len(data_1.shape) < 2:
 
 dataRMS, f_sel = intrms.intrms(data_1, 205)
 f_sel = np.atleast_2d(f_sel[1:]).T
-#np.savetxt("scope_intrms.csv", np.concatenate((f_sel, dataRMS), axis=1), delimiter=",")
+# np.savetxt("scope_intrms.csv", np.concatenate((f_sel, dataRMS), axis=1), delimiter=",")
 
 plt.loglog(f_sel, dataRMS)
 plt.xlabel("Frequency [Hz]")

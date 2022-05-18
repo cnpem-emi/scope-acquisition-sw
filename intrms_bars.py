@@ -23,13 +23,14 @@ group_dict = {
     4: ["Trim-Coils Sector {:02d}", "SI-{:02d}\w\d:PS-Q[^S].*"],  # noqa: W605
 }
 
+
 def plot_bars():
     names = []
     y = []
     for file_name in file_list:
         with open(data_dir + file_name) as file:
             reader = csv.reader(file)
-            next(reader)  #skip row
+            next(reader)  # skip row
             names.append(next(reader)[1])
             param = float(next(reader)[1][1:-1].split(" ")[0])
             fs = float(next(reader)[1])
@@ -78,7 +79,7 @@ while True:
 3: Correctors
 4: Trim-Coils
 5: All
-    
+
 Type a group of power supplies: """))
 
     if group == 0:
@@ -87,8 +88,8 @@ Type a group of power supplies: """))
     if group == 5:
         os.mkdir(os.path.join(data_dir, "Plots/"))
         save_dir = data_dir + "Plots/"
-        print("Saving plots to " + save_dir + " ...")  
-        for group in range (1, 5):
+        print("Saving plots to " + save_dir + " ...")
+        for group in range(1, 5):
             if group == 3 or group == 4:
                 sector_list = [j for j in range(1, 21)]
             else:
@@ -100,7 +101,7 @@ Type a group of power supplies: """))
                 plt.savefig(save_dir + group_dict[group][0].format(sector))
                 plt.close()
         print("done!")
-    
+
     else:
         if group == 3 or group == 4:
             sector = int(input("Type a sector: "))
