@@ -11,12 +11,12 @@ from getpass import getpass
 from queue import Queue
 from threading import Thread
 from zipfile import ZIP_DEFLATED, ZipFile
+import json
 
 import epics
 import siriuspy.search as sirius
 
 PV_TIMEOUT = 2
-ps_dict = {}
 
 TRIGGER_NAMES = [
     "TB-Glob:TI-Mags",
@@ -30,6 +30,9 @@ TRIGGER_NAMES = [
     "SI-Glob:TI-Mags-Corrs",
     "SI-Glob:TI-Mags-QTrims",
 ]
+
+ps_dict = {}
+has_sofb = False
 
 
 class PS:
@@ -45,11 +48,12 @@ class PS:
 
         addr = 0xD008
         self.model = sirius.PSSearch.conv_psname_2_psmodel(name)
+        self.sofb_on = False
 
         if self.model == "FBP":
             sofb_mode_pv = epics.PV(name + ":SOFBMode-Sts")
             if sofb_mode_pv.value != 0:
-                raise RuntimeError("{} SOFB mode status is true".format(name))
+                raise RuntimeError("{}'s SOFBMode is true".format(name))
 
             addr = self.get_fbp_addr()
             self.sample_freq /= 4
@@ -96,10 +100,11 @@ class PS:
         scope_freq_pv.wait_for_connection(PV_TIMEOUT)
         self.sample_freq = scope_freq_pv.value
 
-        wfm_pv = epics.PV(self.name + ":Wfm-Mon")
-        wfm_pv.wait_for_connection(PV_TIMEOUT)
+        if not self.sofb_on:
+            wfm_pv = epics.PV(self.name + ":Wfm-Mon")
+            wfm_pv.wait_for_connection(PV_TIMEOUT)
 
-        self.wfm = wfm_pv.value
+            self.wfm = wfm_pv.value
 
     def recover_initial_config(self):
         scope_freq_pv = epics.PV(self.name + ":ScopeFreq-SP")
@@ -115,18 +120,20 @@ class PS:
         scope_addr_pv.value = self.initial_scope
 
 
-def get_pss(index: int, ps_names: list, q: Queue, sample_freq: float):
+def get_pss(index: int, ps_names: list, q: Queue, sample_freq: float, loc: str):
     pss = []
+    to_read = []
     for ps in ps_names:
         try:
             pss.append(PS(ps, sample_freq))
         except RuntimeError:
-            continue
+            print("{} could not be read (SOFB on), PV name saved to file: sofb.txt".format(ps))
+            to_read.append(ps)
 
-    q.put({str(index): pss})
+    q.put({str(index): pss, str(index) + "_not_read": to_read})
 
 
-def save_data(path: str = ""):
+def save_data(path: str = ""):  # noqa: C901
     if not path:
         path = os.getcwd()
 
@@ -148,25 +155,8 @@ def save_data(path: str = ""):
     q = Queue()
     locs = ["TS", "TB", "BO", "SI"]
     threads = []
+    to_read = {"TS": [], "TB": [], "BO": [], "SI": []}
     global ps_dict
-
-    trigger_pvs = [
-        [
-            epics.PV(trigger + ":Src-Sel"),
-            epics.PV(trigger + ":Src-Sts"),
-            epics.PV(trigger + ":State-Sel"),
-            epics.PV(trigger + ":State-Sts"),
-        ]
-        for trigger in TRIGGER_NAMES
-    ]
-    old_trig_srcs = {}
-    for pv in trigger_pvs:
-        for val in pv:
-            val.wait_for_connection(PV_TIMEOUT)
-        old_trig_srcs[pv[0].pvname] = pv[1].value
-        old_trig_srcs[pv[2].pvname] = pv[3].value
-        pv[0].value = "Study"
-        pv[2].value = 1
 
     for loc in locs:
         print("{}...".format(loc), end="", flush=True)
@@ -184,6 +174,7 @@ def save_data(path: str = ""):
                     sub_args[pivot * i : pivot * (i + 1) if i < pivot_divider else len(sub_args)],
                     q,
                     sample_freq,
+                    loc,
                 ),
             )
             t.start()
@@ -193,10 +184,50 @@ def save_data(path: str = ""):
         for t in threads:
             t.join()
 
-        ps_dict[loc] = list(q.get().values())[0]
+        ps_dict[loc] = []
         for i in range(1, pivot_divider):
-            ps_dict[loc] += list(q.get().values())[0]
+            pvs = list(q.get().values())
+            ps_dict[loc] += pvs[0]
+            to_read[loc] += pvs[1]
+
         print("done!")
+
+    with open("sofb.txt", "w") as sofb_file:
+        sofb_file.write(json.dumps(to_read))
+
+    print("Configuring triggers...")
+
+    trigger_pvs = [
+        [
+            epics.PV(trigger + ":Src-Sel"),
+            epics.PV(trigger + ":Src-Sts"),
+            epics.PV(trigger + ":State-Sel"),
+            epics.PV(trigger + ":State-Sts"),
+        ]
+        for trigger in TRIGGER_NAMES
+    ]
+
+    is_booster_ramping = epics.PV("OpMode-Sts")
+    is_booster_ramping.wait_for_connection(PV_TIMEOUT)
+
+    old_trig_srcs = {}
+    for pv in trigger_pvs:
+        if pv == "SI-Glob:TI-Mags-Corrs" and has_sofb:
+            print(
+                "WARNING: At least one power supply is in SOFB mode, not configuring {}".format(pv)
+            )
+            continue
+
+        if "BO-Glob" in pv and is_booster_ramping.value == "RmpWfm":
+            print("WARNING: Booster is in ramping mode, not configuring {}".format(pv))
+            continue
+
+        for val in pv:
+            val.wait_for_connection(PV_TIMEOUT)
+        old_trig_srcs[pv[0].pvname] = pv[1].value
+        old_trig_srcs[pv[2].pvname] = pv[3].value
+        pv[0].value = "Study"
+        pv[2].value = 1
 
     trig_pv = epics.PV("AS-RaMO:TI-EVG:StudyExtTrig-Cmd")
     trig_pv.wait_for_connection(PV_TIMEOUT)
@@ -213,6 +244,7 @@ def save_data(path: str = ""):
         for ps in pss:
             ps.acquire_and_set_wfm()
             ps.recover_initial_config()
+
             with open(os.path.join(root, loc, ps.name + ".csv"), "w") as csv_file:
                 csv_file.write("Date,{}\n".format(wfm_time))
                 csv_file.write("Name,{}\n".format(ps.name))
@@ -221,6 +253,7 @@ def save_data(path: str = ""):
                 csv_file.write("Model,{}\n".format(ps.model))
 
                 csv_file.writelines("Wfm-Mon\n" + "\n".join([str(wfm) for wfm in ps.wfm]))
+
         print("done!")
 
     for pv in trigger_pvs:

@@ -45,7 +45,6 @@ def plot_bars():
 
     x = np.arange(len(names))
     fig, ax = plt.subplots()
-    bars = ax.bar(x, y, zorder=3)
     ax.set_ylabel("Integrated noise [ppm]")
     ax.set_xlabel("Power supply")
 
@@ -62,7 +61,9 @@ def plot_bars():
         plt.text(i - 0.25, val * 1.1, "{:.4f}".format(val), rotation="vertical")
 
     plt.title(
-        "Integrated noise up to {}Hz of {} supplies \n{}".format(f_max, group_dict[group][0].format(sector), date),
+        "Integrated noise up to {}Hz of {} supplies \n{}".format(
+            f_max, group_dict[group][0].format(sector), date
+        ),
         size=10,
         pad=40,
     )
@@ -72,7 +73,9 @@ def plot_bars():
 
 while True:
     f_max = float(input("Type the maximum frequency [Hz] for noise integration: "))
-    group = int(input("""
+    group = int(
+        input(
+            """
 0: Cancel
 1: Dipoles e Quadrupoles
 2: Sextupoles
@@ -80,7 +83,9 @@ while True:
 4: Trim-Coils
 5: All
 
-Type a group of power supplies: """))
+Type a group of power supplies: """
+        )
+    )
 
     if group == 0:
         break
