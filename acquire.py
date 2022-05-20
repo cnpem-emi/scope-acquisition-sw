@@ -1,3 +1,4 @@
+import argparse
 import os
 import smtplib
 import ssl
@@ -133,7 +134,7 @@ def get_pss(index: int, ps_names: list, q: Queue, sample_freq: float, loc: str):
     q.put({str(index): pss, str(index) + "_not_read": to_read})
 
 
-def save_data(path: str = ""):  # noqa: C901
+def save_data(path: str = "", to_read: dict = None):  # noqa: C901
     if not path:
         path = os.getcwd()
 
@@ -161,7 +162,15 @@ def save_data(path: str = ""):  # noqa: C901
     for loc in locs:
         print("{}...".format(loc), end="", flush=True)
         os.mkdir(os.path.join(root, loc))
-        sub_args = sirius.PSSearch.get_psnames({"sec": loc, "dis": "PS", "dev": "(?!FC).*"})
+        if to_read is None:
+            sub_args = sirius.PSSearch.get_psnames({"sec": loc, "dis": "PS", "dev": "(?!FC).*"})
+        else:
+            try:
+                sub_args = to_read[loc]
+            except KeyError:
+                print(
+                    "Invalid target power supply list provided! Make sure it conforms to JSON syntax."
+                )
 
         pivot_divider = 2 if loc != "SI" else 6
 
@@ -300,8 +309,24 @@ def save_data(path: str = ""):  # noqa: C901
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Acquire power supply buffer data for all available power supplies"
+    )
+    parser.add_argument(
+        "-i", "--input", type=str, help="only acquire data for power supplies described in the path"
+    )
+    parser.add_argument("-o", "--output", type=str, help="output path")
+
+    args = parser.parse_args()
+
+    to_read = None
+
+    if args.input is not None:
+        with open(args.input, "r") as ps_file:
+            to_read = json.load(ps_file)
+
     try:
-        save_data()
+        save_data(path=args.output, to_read=to_read)
     except KeyboardInterrupt:
         print("Handling program interruption...")
         print(
