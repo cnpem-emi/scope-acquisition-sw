@@ -266,8 +266,13 @@ def save_data(path: str = "", to_read: dict = None):  # noqa: C901
         print("done!")
 
     for pv in trigger_pvs:
-        pv[0].value = old_trig_srcs[pv[0].pvname]
-        pv[2].value = old_trig_srcs[pv[2].pvname]
+        while old_trig_srcs[pv[2].pvname] != pv[3].value:
+            pv[2].value = old_trig_srcs[pv[2].pvname]
+            time.sleep(0.5)
+
+        while old_trig_srcs[pv[0].pvname] != pv[1].value:
+            pv[0].value = old_trig_srcs[pv[0].pvname]
+            time.sleep(0.5)
 
     if recipient:
         message = MIMEMultipart()
